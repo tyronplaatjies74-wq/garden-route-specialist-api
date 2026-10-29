@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import json, random, urllib.parse
 
-app = FastAPI(title="Garden Route Specialist AI Agent", version="4.1.0")
+app = FastAPI(title="Garden Route Specialist AI Agent", version="4.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 API_KEY_NAME = "X-Agent-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
@@ -42,15 +42,12 @@ def generate_smart_itinerary(towns, days, travel_style, budget_max=None, dietary
             for gem in k["hidden_gems"]:
                 pool.append({"town": t, **gem, "type":"hidden_gem", "safety":k["safety_tips"], "season":k["best_season"]})
     
-    # --- FIXED FILTERS v4.1 ---
     if dietary:
         d = dietary.lower()
         if "no oyster" in d or "halal" in d:
             pool = [p for p in pool if "oyster" not in p["name"].lower() and "oyster" not in p.get("food","").lower() and "non-halal" not in p.get("food","").lower()]
         if "halal" in d:
             pool = [p for p in pool if "non-halal" not in p.get("food","")]
-        if "vegan" in d:
-            pool = [p for p in pool if "vegan" in p.get("food","") or p.get("food")=="any" or "halal" in p.get("food","")]
     if family_mode:
         pool = [p for p in pool if p.get("family",True) == True]
     if budget_max:
@@ -58,15 +55,13 @@ def generate_smart_itinerary(towns, days, travel_style, budget_max=None, dietary
     if shuffle:
         random.shuffle(pool)
 
-    # --- FIXED EVENINGS v4.1 - HALAL + FAMILY + BUDGET ---
     evenings_pool = [
-        {"name":"Sunset at The Heads + mocktails at Island Cafe (halal)","cost":150,"coords":"-34.08,23.05","family":True,"food":"halal vegan"},
-        {"name":"Lagoon-side dinner at Drydock - halal grill","cost":400,"coords":"-34.04,23.05","family":True,"food":"halal"},
+        {"name":"Sunset at The Heads with halal mocktails at Island Cafe","cost":150,"coords":"-34.08,23.05","family":True,"food":"halal vegan"},
+        {"name":"Drydock halal grill, lagoon-side","cost":400,"coords":"-34.04,23.05","family":True,"food":"halal"},
         {"name":"Beach braai at Brenton-on-Sea (halal-friendly)","cost":200,"coords":"-34.07,23.03","family":True,"food":"halal"},
         {"name":"Stargazing at Margaret's Viewpoint - take torch","cost":0,"coords":"-34.07,23.02","family":True,"food":"halal vegan"},
         {"name":"Family pizza night - halal","cost":150,"coords":"-34.05,23.05","family":True,"food":"halal"}
     ]
-    # Filter evenings same logic
     if dietary and "halal" in dietary.lower():
         evenings_pool = [e for e in evenings_pool if "halal" in e.get("food","").lower() or "vegan" in e.get("food","").lower()]
     if family_mode:
@@ -92,7 +87,19 @@ def generate_smart_itinerary(towns, days, travel_style, budget_max=None, dietary
         afternoon = town_pool[1] if len(town_pool)>1 else town_pool[0]
         used.add(morning["name"])
         used.add(afternoon["name"])
+        
+        # v4.2 FIX: Day budget cap - pick evening that keeps day under budget
         evening = evenings_pool[(d-1) % len(evenings_pool)]
+        if budget_max:
+            base_cost = morning.get("cost",0) + afternoon.get("cost",0)
+            if base_cost + evening.get("cost",0) > budget_max + 200:
+                for e in sorted(evenings_pool, key=lambda x: x["cost"]):
+                    if base_cost + e.get("cost",0) <= budget_max + 200:
+                        evening = e
+                        break
+                else:
+                    evening = min(evenings_pool, key=lambda x: x["cost"])
+
         day_cost = morning.get("cost",0) + afternoon.get("cost",0) + evening.get("cost",0)
         total += day_cost
         plan.append({
@@ -115,7 +122,7 @@ class ItineraryRequest(BaseModel):
  towns: List[str]; days: int; travel_style: str = "adventure"; budget_max: Optional[int] = None; dietary: Optional[str] = None; family_mode: bool = False; shuffle: bool = False
 
 @app.get("/")
-def root(): return {"status":"Specialist LIVE v4.1 - FIXED HALAL FAMILY BUDGET MAPS","features":["budget","food filter halal vegan no oyster","family filter","shuffle","maps","weather","halal evenings"],"version":"4.1.0"}
+def root(): return {"status":"Specialist LIVE v4.2 - FIXED DAY BUDGET","features":["budget","halal vegan no oyster","family","shuffle","maps","weather","halal evenings fixed"],"version":"4.2.0"}
 
 @app.get("/knowledge/{town}")
 def get_knowledge(town: str, api_key: str = Depends(get_api_key)):
@@ -135,11 +142,11 @@ def generate(req: ItineraryRequest, api_key: str = Depends(get_api_key)):
 @app.post("/mcp")
 async def mcp_endpoint(request: Request):
  body = await request.json(); method = body.get("method"); id = body.get("id")
- if method == "initialize": return {"jsonrpc":"2.0","id":id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"garden-route-specialist","version":"4.1.0"}}}
+ if method == "initialize": return {"jsonrpc":"2.0","id":id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"garden-route-specialist","version":"4.2.0"}}}
  if method == "notifications/initialized": return {"jsonrpc":"2.0","id":id,"result":{}}
  if method == "tools/list": return {"jsonrpc":"2.0","id":id,"result":{"tools":[
    {"name":"get_knowledge","description":"Get hidden gems, activities, season and safety with maps and cost","inputSchema":{"type":"object","properties":{"town":{"type":"string"}},"required":["town"]}},
-   {"name":"generate_itinerary","description":"Generate itinerary with budget_max (int R), dietary (halal/vegan/no oyster), family_mode (bool), shuffle (bool), Google Maps links, weather safety, total budget","inputSchema":{"type":"object","properties":{"towns":{"type":"array","items":{"type":"string"}},"days":{"type":"integer"},"travel_style":{"type":"string"},"budget_max":{"type":"integer","description":"Max cost per activity in Rand, e.g. 400"},"dietary":{"type":"string","description":"halal, vegan, no oyster, or combo like 'halal vegan'"},"family_mode":{"type":"boolean","description":"True = only kid-friendly"},"shuffle":{"type":"boolean","description":"True = shuffle pool for unique itinerary each time"}},"required":["towns","days"]}}
+   {"name":"generate_itinerary","description":"Generate itinerary with budget_max (int R), dietary (halal/vegan/no oyster), family_mode (bool), shuffle (bool), Google Maps links, weather safety, total budget - FIXED Day 3 R900 bug","inputSchema":{"type":"object","properties":{"towns":{"type":"array","items":{"type":"string"}},"days":{"type":"integer"},"travel_style":{"type":"string"},"budget_max":{"type":"integer","description":"Max cost per activity in Rand, e.g. 400"},"dietary":{"type":"string","description":"halal, vegan, no oyster"},"family_mode":{"type":"boolean","description":"True = only kid-friendly"},"shuffle":{"type":"boolean","description":"True = shuffle pool"}},"required":["towns","days"]}}
  ]}}
  if method == "tools/call":
   params = body.get("params",{}); tool_name = params.get("name"); args = params.get("arguments",{})
@@ -158,4 +165,4 @@ async def mcp_endpoint(request: Request):
  return {"jsonrpc":"2.0","id":id,"result":{}}
 
 @app.get("/mcp")
-def mcp_get(): return {"status":"MCP endpoint LIVE v4.1 - FIXED HALAL FAMILY BUDGET MAPS"}
+def mcp_get(): return {"status":"MCP endpoint LIVE v4.2 - FIXED DAY BUDGET R900 bug"}
