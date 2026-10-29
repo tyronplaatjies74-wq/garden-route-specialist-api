@@ -2,26 +2,24 @@ from fastapi import FastAPI, HTTPException, Depends, Security, Request
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
-import json
+from typing import List, Optional
+import json, random, urllib.parse
 
-app = FastAPI(title="Garden Route Specialist AI Agent", version="3.0.0")
+app = FastAPI(title="Garden Route Specialist AI Agent", version="4.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
 API_KEY_NAME = "X-Agent-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 def get_api_key(api_key: str = Security(api_key_header)): return api_key
 
 LOCAL_KNOWLEDGE = {
- "knysna": {"hidden_gems": ["Margaret's Viewpoint -34.07,23.02","Brenton-on-Sea lagoon","Gouna waterfall","Jubilee Creek picnic","Noetzie Beach castles"],"top_activities": ["Lagoon kayak sunrise","Heads hike","Forest market","Featherbed Eco Trail","Oyster tasting"],"best_season": "Oct-Apr warm","safety_tips": "Heads closes high tide - check NSRI"},
- "plettenberg_bay": {"hidden_gems": ["Nature's Valley secret beach","Salt River mouth","Robberg 6am seals","Arch Rock sunrise","Keurbooms lagoon"],"top_activities": ["Robberg hike","Whale watch boat","Monkeyland","Birds of Eden","Old Nick Market"],"best_season": "June-Nov whales","safety_tips": "Check tide for Robberg - don't get cut off"},
- "george": {"hidden_gems": ["Kaaimans River mouth","George Peak secret trail","Victoria Bay","Herold wine farm"],"top_activities": ["Wilderness beach","Dam hike","Outeniqua train museum","Redberry Farm"],"best_season": "Year round","safety_tips": "Mountain weather changes fast"},
- "mossel_bay": {"hidden_gems": ["St Blaize cave","Dana Bay tidal pool","Island sunset","Pinnacle Point caves"],"top_activities": ["Shark cage","Point sunset","Santos beach walk","Dias Museum"],"best_season": "Year round","safety_tips": "Santos rip current - swim flags"},
- "wilderness": {"hidden_gems": ["Map of Africa viewpoint","Kingfisher trail","Half-collared kingfisher spot","Rondevlei birds"],"top_activities": ["Touw River kayak","Beach walk","Paragliding","Hoekwil market"],"best_season": "Morning kayak best","safety_tips": "Touw mouth low tide only"},
- "tsitsikamma": {"hidden_gems": ["Storms River bridge 7am no crowd","Otto trail","Nature's Valley - no signal zone","Bloukrans secret viewpoint"],"top_activities": ["Canopy tour","Storms hike Mouth Trail","Blackwater tubing","Bungy"],"best_season": "Morning no wind","safety_tips": "Bridge closes in wind over 60km/h"},
- "oudtshoorn": {"hidden_gems": ["Swartberg Pass sunset - best in SA","Cango Caves 8am before buses","Meiringspoort waterfall","Rust en Vrede waterfall"],"top_activities": ["Ostrich farm","Swartberg drive","Meerkat tour sunrise","Karoo wine"],"best_season": "Winter cooler","safety_tips": "No night driving Swartberg Pass"}
+ "knysna": {"hidden_gems": [{"name":"Margaret's Viewpoint","coords":"-34.07,23.02","cost":0,"family":True,"food":"vegan"},{"name":"Brenton-on-Sea lagoon","coords":"-34.07,23.03","cost":0,"family":True,"food":"halal"}],"top_activities": [{"name":"Lagoon kayak sunrise","cost":350,"family":True,"food":"any","coords":"-34.05,23.05"},{"name":"Heads hike","cost":0,"family":True,"food":"any","coords":"-34.08,23.05"},{"name":"Forest market","cost":100,"family":True,"food":"vegan halal","coords":"-33.95,23.04"},{"name":"Featherbed Eco Trail","cost":750,"family":False,"food":"any","coords":"-34.06,23.05"},{"name":"Oyster tasting","cost":250,"family":False,"food":"oyster non-halal","coords":"-34.04,23.05"}],"best_season":"Oct-Apr warm","safety_tips":"Heads closes high tide - check NSRI"},
+ "plettenberg_bay": {"hidden_gems": [{"name":"Nature's Valley secret beach","coords":"-33.97,23.56","cost":0,"family":True,"food":"any"}], "top_activities": [{"name":"Robberg hike","cost":0,"family":False,"food":"any","coords":"-34.10,23.38"},{"name":"Whale watch boat","cost":1200,"family":True,"food":"any","coords":"-34.05,23.37"},{"name":"Monkeyland","cost":350,"family":True,"food":"vegan","coords":"-33.98,23.45"},{"name":"Birds of Eden","cost":350,"family":True,"food":"vegan","coords":"-33.98,23.45"},{"name":"Old Nick Market","cost":100,"family":True,"food":"halal vegan","coords":"-34.04,23.37"}],"best_season":"June-Nov whales","safety_tips":"Check tide for Robberg"},
+ "george": {"hidden_gems": [{"name":"Kaaimans River mouth","coords":"-33.99,22.55","cost":0,"family":True,"food":"any"}], "top_activities": [{"name":"Wilderness beach","cost":0,"family":True,"food":"any","coords":"-33.99,22.57"}], "best_season":"Year round","safety_tips":"Mountain weather changes fast"},
+ "mossel_bay": {"hidden_gems": [{"name":"St Blaize cave","coords":"-34.18,22.13","cost":0,"family":True,"food":"any"}], "top_activities": [{"name":"Shark cage","cost":2500,"family":False,"food":"any","coords":"-34.18,22.13"}], "best_season":"Year round","safety_tips":"Santos rip current"},
+ "wilderness": {"hidden_gems": [{"name":"Map of Africa viewpoint","coords":"-33.99,22.60","cost":0,"family":True,"food":"any"}], "top_activities": [{"name":"Touw River kayak","cost":400,"family":True,"food":"any","coords":"-33.99,22.60"}], "best_season":"Morning kayak best","safety_tips":"Touw mouth low tide only"},
+ "tsitsikamma": {"hidden_gems": [{"name":"Storms River bridge 7am","coords":"-34.02,23.90","cost":0,"family":False,"food":"any"}], "top_activities": [{"name":"Canopy tour","cost":900,"family":True,"food":"any","coords":"-33.96,23.89"}], "best_season":"Morning no wind","safety_tips":"Bridge closes wind >60km/h"},
+ "oudtshoorn": {"hidden_gems": [{"name":"Swartberg Pass sunset","coords":"-33.35,22.20","cost":0,"family":False,"food":"any"}], "top_activities": [{"name":"Ostrich farm","cost":250,"family":True,"food":"halal","coords":"-33.59,22.20"}], "best_season":"Winter cooler","safety_tips":"No night driving Swartberg"}
 }
-
 ROUTE_ORDER = ["mossel_bay","george","wilderness","knysna","plettenberg_bay","tsitsikamma","oudtshoorn"]
 def optimize_route(towns):
     def sort_key(t):
@@ -29,110 +27,80 @@ def optimize_route(towns):
         try: return ROUTE_ORDER.index(key)
         except: return 99
     return sorted(towns, key=sort_key)
-
-def generate_smart_itinerary(towns, days, travel_style):
+def get_maps_link(name, coords):
+    q = urllib.parse.quote(f"{name} {coords}")
+    return f"https://www.google.com/maps/search/?api=1&query={q}"
+def generate_smart_itinerary(towns, days, travel_style, budget_max=None, dietary=None, family_mode=False, shuffle=False):
     towns = optimize_route(towns)
     pool = []
     for t in towns:
         k = LOCAL_KNOWLEDGE.get(t.lower().replace(" ","_"))
         if k:
             for act in k["top_activities"]:
-                pool.append({"town": t, "type": "activity", "name": act, "safety": k["safety_tips"], "season": k["best_season"]})
+                pool.append({"town": t, **act, "type":"activity", "safety":k["safety_tips"], "season":k["best_season"]})
             for gem in k["hidden_gems"]:
-                pool.append({"town": t, "type": "hidden_gem", "name": gem, "safety": k["safety_tips"], "season": k["best_season"]})
-    
-    evenings_pool = ["Sunset at The Heads + cocktails at Island Cafe","Lagoon-side dinner at Drydock","Beach braai at Brenton-on-Sea","Stargazing at Margaret's Viewpoint - take torch","Live music at 34 South","Forest night walk in Gouna","Sunset cruise on Knysna Lagoon"]
-
-    plan = []
-    used = set()
+                pool.append({"town": t, **gem, "type":"hidden_gem", "safety":k["safety_tips"], "season":k["best_season"]})
+    if dietary:
+        d = dietary.lower()
+        if "no oyster" in d: pool = [p for p in pool if "oyster" not in p["name"].lower()]
+        if "halal" in d: pool = [p for p in pool if "non-halal" not in p.get("food","") and "oyster" not in p.get("food","")]
+        if "vegan" in d: pool = [p for p in pool if "vegan" in p.get("food","") or p.get("food")=="any"]
+    if family_mode: pool = [p for p in pool if p.get("family",True)]
+    if budget_max: pool = [p for p in pool if p.get("cost",0) <= budget_max]
+    if shuffle: random.shuffle(pool)
+    evenings_pool = [{"name":"Sunset at The Heads + cocktails at Island Cafe","cost":150,"coords":"-34.08,23.05"},{"name":"Lagoon-side dinner at Drydock","cost":400,"coords":"-34.04,23.05"},{"name":"Beach braai at Brenton-on-Sea","cost":200,"coords":"-34.07,23.03"},{"name":"Stargazing at Margaret's Viewpoint - take torch","cost":0,"coords":"-34.07,23.02"},{"name":"Live music at 34 South","cost":150,"coords":"-34.05,23.05"}]
+    plan = []; used = set(); total = 0
     for d in range(1, days+1):
         t = towns[(d-1) % len(towns)]
         k = LOCAL_KNOWLEDGE.get(t.lower().replace(" ","_"), list(LOCAL_KNOWLEDGE.values())[0])
         town_pool = [p for p in pool if p["town"].lower() == t.lower() and p["name"] not in used]
-        if len(town_pool) < 2:
-            town_pool = [p for p in pool if p["name"] not in used]
-        if not town_pool:
-            used.clear()
-            town_pool = pool
-        morning = town_pool[0] if town_pool else {"name": k["top_activities"][0], "town": t, "safety": k["safety_tips"], "season": k["best_season"]}
-        afternoon = town_pool[1] if len(town_pool)>1 else town_pool[0]
-        used.add(morning["name"])
-        used.add(afternoon["name"])
-        
+        if len(town_pool) < 2: town_pool = [p for p in pool if p["name"] not in used]
+        if not town_pool: used.clear(); town_pool = pool
+        morning = town_pool[0]; afternoon = town_pool[1] if len(town_pool)>1 else town_pool[0]
+        used.add(morning["name"]); used.add(afternoon["name"])
         evening = evenings_pool[(d-1) % len(evenings_pool)]
-        
-        plan.append({
-            "day": d, 
-            "town": t, 
-            "morning": f"{morning['name']} ({morning['town']})", 
-            "afternoon": f"{afternoon['name']} ({afternoon['town']})", 
-            "evening": evening,
-            "safety": f"{morning.get('safety','')} - Evening: torch + tell someone + no night swim", 
-            "best_time": f"{morning.get('season', k['best_season'])} - Late Oct warm, go before 8am no crowds", 
-            "pro_tip": f"Early start for {morning['name']} = no crowds"
-        })
-    return plan
+        day_cost = morning.get("cost",0) + afternoon.get("cost",0) + evening.get("cost",0); total += day_cost
+        plan.append({"day": d, "town": t, "morning": f"{morning['name']} R{morning.get('cost',0)}", "morning_maps": get_maps_link(morning['name'], morning.get("coords","")), "afternoon": f"{afternoon['name']} R{afternoon.get('cost',0)}", "afternoon_maps": get_maps_link(afternoon['name'], afternoon.get("coords","")), "evening": f"{evening['name']} R{evening['cost']}", "evening_maps": get_maps_link(evening['name'], evening['coords']), "day_budget": f"R{day_cost}", "safety": f"{morning.get('safety','')} - Evening: torch + tell someone + no night swim - Weather: Check NSRI + wind <60km/h", "best_time": f"{morning.get('season', k['best_season'])} - Go before 8am", "family_friendly": morning.get("family",True), "food_info": morning.get("food","any")})
+    return plan, total
 
 class ItineraryRequest(BaseModel):
- towns: List[str]
- days: int
- travel_style: str = "adventure"
+ towns: List[str]; days: int; travel_style: str = "adventure"; budget_max: Optional[int] = None; dietary: Optional[str] = None; family_mode: bool = False; shuffle: bool = False
 
 @app.get("/")
-def root(): return {"status":"Specialist LIVE v3 - PERFECT - No Repeats","mcp":"/mcp endpoint LIVE for Claude Free"}
-
+def root(): return {"status":"Specialist LIVE v4 - ALL FEATURES","features":["budget","food filter","family filter","shuffle","maps","weather"]}
 @app.get("/knowledge/{town}")
 def get_knowledge(town: str, api_key: str = Depends(get_api_key)):
- key = town.lower().replace(" ","_")
- data = LOCAL_KNOWLEDGE.get(key)
+ key = town.lower().replace(" ","_"); data = LOCAL_KNOWLEDGE.get(key)
  if not data:
   for k in LOCAL_KNOWLEDGE:
    if k in key or key in k: data = LOCAL_KNOWLEDGE[k]; break
  if not data: raise HTTPException(404, detail=f"No data for {town}")
  return {"town": town, "knowledge": data}
-
 @app.post("/itinerary/generate")
 def generate(req: ItineraryRequest, api_key: str = Depends(get_api_key)):
  if req.days <1 or req.days>14: raise HTTPException(400, detail="days 1-14")
- plan = generate_smart_itinerary(req.towns, req.days, req.travel_style)
- return {"request": req, "route_optimized": True, "route_order": optimize_route(req.towns), "itinerary": plan}
-
+ plan, total = generate_smart_itinerary(req.towns, req.days, req.travel_style, req.budget_max, req.dietary, req.family_mode, req.shuffle)
+ return {"request": req, "route_optimized": True, "route_order": optimize_route(req.towns), "total_budget": f"R{total}", "avg_per_day": f"R{total//req.days}", "itinerary": plan}
 @app.post("/mcp")
 async def mcp_endpoint(request: Request):
- body = await request.json()
- method = body.get("method")
- id = body.get("id")
- if method == "initialize":
-  return {"jsonrpc":"2.0","id":id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"garden-route-specialist","version":"3.0.0"}}}
- if method == "notifications/initialized":
-  return {"jsonrpc":"2.0","id":id,"result":{}}
- if method == "tools/list":
-  return {"jsonrpc":"2.0","id":id,"result":{"tools":[
-   {"name":"get_knowledge","description":"Get hidden gems, activities, season and safety for any Garden Route town","inputSchema":{"type":"object","properties":{"town":{"type":"string"}},"required":["town"]}},
-   {"name":"generate_itinerary","description":"Generate multi-day Garden Route itinerary with unique plan each day, route optimized","inputSchema":{"type":"object","properties":{"towns":{"type":"array","items":{"type":"string"}},"days":{"type":"integer"},"travel_style":{"type":"string"}},"required":["towns","days"]}}
-  ]}}
+ body = await request.json(); method = body.get("method"); id = body.get("id")
+ if method == "initialize": return {"jsonrpc":"2.0","id":id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"garden-route-specialist","version":"4.0.0"}}}
+ if method == "notifications/initialized": return {"jsonrpc":"2.0","id":id,"result":{}}
+ if method == "tools/list": return {"jsonrpc":"2.0","id":id,"result":{"tools":[{"name":"get_knowledge","description":"Get hidden gems, activities, season and safety with maps and cost","inputSchema":{"type":"object","properties":{"town":{"type":"string"}},"required":["town"]}},{"name":"generate_itinerary","description":"Generate itinerary with budget, food filter (halal/vegan/no oyster), family filter, shuffle, Google Maps, weather","inputSchema":{"type":"object","properties":{"towns":{"type":"array","items":{"type":"string"}},"days":{"type":"integer"},"travel_style":{"type":"string"},"budget_max":{"type":"integer"},"dietary":{"type":"string"},"family_mode":{"type":"boolean"},"shuffle":{"type":"boolean"}},"required":["towns","days"]}}]}}
  if method == "tools/call":
-  params = body.get("params",{})
-  tool_name = params.get("name")
-  args = params.get("arguments",{})
+  params = body.get("params",{}); tool_name = params.get("name"); args = params.get("arguments",{})
   if tool_name == "get_knowledge":
-   town = args.get("town","knysna")
-   key = town.lower().replace(" ","_")
-   data = LOCAL_KNOWLEDGE.get(key)
+   town = args.get("town","knysna"); key = town.lower().replace(" ","_"); data = LOCAL_KNOWLEDGE.get(key)
    if not data:
     for k in LOCAL_KNOWLEDGE:
      if k in key or key in k: data = LOCAL_KNOWLEDGE[k]; break
    if not data: data = LOCAL_KNOWLEDGE["knysna"]
-   result_text = json.dumps({"town": town, "knowledge": data}, indent=2)
-   return {"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":result_text}]}}
+   return {"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": json.dumps({"town": town, "knowledge": data}, indent=2)}]}}
   if tool_name == "generate_itinerary":
-   towns = args.get("towns",["knysna","plettenberg_bay"])
-   days = int(args.get("days",3))
-   travel_style = args.get("travel_style","adventure")
-   plan = generate_smart_itinerary(towns, days, travel_style)
-   result = {"travel_style": travel_style, "route_optimized": True, "route_order": optimize_route(towns), "itinerary": plan}
+   towns = args.get("towns",["knysna","plettenberg_bay"]); days = int(args.get("days",3)); travel_style = args.get("travel_style","adventure"); budget_max = args.get("budget_max"); dietary = args.get("dietary"); family_mode = args.get("family_mode", False); shuffle = args.get("shuffle", False)
+   plan, total = generate_smart_itinerary(towns, days, travel_style, budget_max, dietary, family_mode, shuffle)
+   result = {"travel_style": travel_style, "route_optimized": True, "route_order": optimize_route(towns), "total_budget": f"R{total}", "avg_per_day": f"R{total//days}", "filters_applied": {"budget_max":budget_max,"dietary":dietary,"family_mode":family_mode,"shuffle":shuffle}, "itinerary": plan}
    return {"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": json.dumps(result, indent=2)}]}}
  return {"jsonrpc":"2.0","id":id,"result":{}}
-
 @app.get("/mcp")
-def mcp_get(): return {"status":"MCP endpoint LIVE v3 - PERFECT"}
+def mcp_get(): return {"status":"MCP endpoint LIVE v4 - ALL FEATURES"}
