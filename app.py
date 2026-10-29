@@ -2,17 +2,73 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-import json, urllib.parse
+import json, urllib.parse, time
+from collections import defaultdict
 
 app = FastAPI(
     title="Garden Route Specialist AI Agent - PUBLIC",
-    version="7.3.0",
-    description="v7.3 PUBLIC - 6 towns + R280/day formula + NSRI safety + fixed vegetarian tags + affiliate ready"
+    version="7.4.0",
+    description="v7.4 PUBLIC - 6 towns + R280/day + NSRI + dietary fixed + affiliate ready + CLAUDE TRACKING"
 )
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# v7.3 - Analytics in-memory
-STATS = {"itineraries_generated": 0, "towns_served": []}
+# === v7.4 TRACKING UPGRADE ===
+STATS = {
+    "itineraries_generated": 0, 
+    "towns_served": [],
+    "total_calls": 0,
+    "claude_calls": 0,
+    "chatgpt_calls": 0,
+    "meta_calls": 0,
+    "other_calls": 0,
+    "by_endpoint": {},
+    "by_town": {},
+    "last_calls": [],
+    "started_at": time.time(),
+    "is_claude_using": False
+}
+
+def detect_ai(user_agent: str):
+    ua = (user_agent or "").lower()
+    if "claude" in ua or "anthropic" in ua:
+        return "claude"
+    if "openai" in ua or "chatgpt" in ua or "gpt" in ua:
+        return "chatgpt"
+    if "meta" in ua or "llama" in ua or "facebook" in ua:
+        return "meta"
+    return "other"
+
+@app.middleware("http")
+async def tracking_middleware(request: Request, call_next):
+    if request.method != "OPTIONS":
+        STATS["total_calls"] += 1
+        endpoint = request.url.path
+        STATS["by_endpoint"][endpoint] = STATS["by_endpoint"].get(endpoint, 0) + 1
+        ua = request.headers.get("user-agent", "")
+        ai_type = detect_ai(ua)
+        if ai_type == "claude":
+            STATS["claude_calls"] += 1
+            STATS["is_claude_using"] = True
+        elif ai_type == "chatgpt":
+            STATS["chatgpt_calls"] += 1
+        elif ai_type == "meta":
+            STATS["meta_calls"] += 1
+        else:
+            STATS["other_calls"] += 1
+        if "/knowledge/" in endpoint:
+            town = endpoint.split("/")[-1].lower()
+            STATS["by_town"][town] = STATS["by_town"].get(town, 0) + 1
+        entry = {
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "endpoint": endpoint,
+            "ai": ai_type,
+            "method": request.method,
+            "ua_short": ua[:100]
+        }
+        STATS["last_calls"].insert(0, entry)
+        STATS["last_calls"] = STATS["last_calls"][:30]
+    response = await call_next(request)
+    return response
 
 LOCAL_KNOWLEDGE = {
  "mossel_bay": {
@@ -202,7 +258,7 @@ def generate_smart_itinerary(towns, days, travel_style, budget_max=None, dietary
             "afternoon_maps": get_maps_link(afternoon["name"], afternoon.get("coords","")),
             "evening": evening_label(evening, t),
             "evening_maps": get_maps_link(evening["name"], evening.get("coords","")),
-            "hotel": f"{hotel['name']} R{hotel['cost']}/night - DORM CHEAPEST v7.3",
+            "hotel": f"{hotel['name']} R{hotel['cost']}/night - DORM CHEAPEST v7.4",
             "hotel_booking": hotel.get("booking_link",""),
             "hotel_maps": get_maps_link(hotel["name"], t),
             "transport": {
@@ -236,24 +292,56 @@ def build_result(towns, days, travel_style, budget_max, dietary, family_mode, sh
         "avg_per_day_with_hotels": f"R{total_hotels//days if days>0 else total_hotels}",
         "daily_budget_target": f"R{budget_max}/day" if budget_max else "No cap",
         "filters_applied": {"budget_max":budget_max,"dietary":dietary,"family_mode":family_mode,"shuffle":shuffle,"travel_style":travel_style,"dietary_tags_fixed": True},
-        "v7.3_improvements": ["6 towns - mossel_bay + george added - full Garden Route","dietary_tags fixed - vegetarian/vegan/halal/any filtering","NSRI + tide + wind safety links in every day","booking_link ready for affiliate commission","transport honest - R280/day is without Baz Bus - extra shown","stats tracking"],
+        "v7.4_improvements": ["TRACKING - see if Claude is using","6 towns","dietary_tags fixed","NSRI safety","booking_link ready","transport honest"],
+        "tracking": {"total_calls": STATS["total_calls"], "claude_calls": STATS["claude_calls"], "is_claude_using": STATS["is_claude_using"]},
         "itinerary": plan
     }
 
 @app.get("/")
-def root(): return {"status":"Specialist LIVE v7.3 - 6 towns R280/day","version":"7.3.0 PUBLIC","towns": list(LOCAL_KNOWLEDGE.keys()), "stats": STATS, "public_endpoints": ["/knowledge/{town}","/itinerary/generate","/mcp","/docs","/stats","/whatsapp/info"]}
+def root(): 
+    return {
+        "status":"Specialist LIVE v7.4 - 6 towns R280/day + TRACKING",
+        "version":"7.4.0 PUBLIC + CLAUDE TRACKING",
+        "towns": list(LOCAL_KNOWLEDGE.keys()), 
+        "stats_summary": {
+            "itineraries_generated": STATS["itineraries_generated"],
+            "total_calls": STATS["total_calls"],
+            "claude_calls": STATS["claude_calls"],
+            "is_claude_using": STATS["is_claude_using"]
+        },
+        "public_endpoints": ["/knowledge/{town}","/itinerary/generate","/mcp","/docs","/stats","/whatsapp/info"]
+    }
 
 @app.get("/stats")
-def get_stats(): return {"version":"7.3.0","itineraries_generated": STATS["itineraries_generated"], "towns_served": STATS["towns_served"], "R280_formula": "FREE hikes + self-cook + R280 dorm", "towns": list(LOCAL_KNOWLEDGE.keys())}
+def get_stats(): 
+    uptime = int(time.time() - STATS["started_at"])
+    return {
+        "version":"7.4.0 - TRACKING LIVE",
+        "uptime_seconds": uptime,
+        "itineraries_generated": STATS["itineraries_generated"], 
+        "towns_served": STATS["towns_served"],
+        "total_calls": STATS["total_calls"],
+        "claude_calls": STATS["claude_calls"],
+        "chatgpt_calls": STATS["chatgpt_calls"],
+        "meta_calls": STATS["meta_calls"],
+        "other_calls": STATS["other_calls"],
+        "by_endpoint": STATS["by_endpoint"],
+        "by_town": STATS["by_town"],
+        "is_claude_using": STATS["is_claude_using"],
+        "last_30_calls": STATS["last_calls"],
+        "R280_formula": "FREE hikes + self-cook + R280 dorm",
+        "affiliate_status": "READY - waiting for EUR IBAN - v8.0 MONEY MAKER",
+        "towns": list(LOCAL_KNOWLEDGE.keys())
+    }
 
 @app.get("/whatsapp/info")
-def whatsapp_info(): return {"status":"WhatsApp bot coming - v8","how_it_works":"Same API - POST /itinerary/generate - we will add WhatsApp webhook","contact":"Add your number to hostels"}
+def whatsapp_info(): return {"status":"WhatsApp bot coming - v8","how_it_works":"Same API - POST /itinerary/generate","contact":"Add your number to hostels"}
 
 @app.get("/knowledge/{town}")
 def get_knowledge(town: str):
     key = town.lower().replace(" ","_")
     data = LOCAL_KNOWLEDGE.get(key, {"hidden_gems": [], "top_activities": []})
-    return {"town": town, "knowledge": data, "R280_formula": "FREE + self-cook + R280 dorm - v7.3 dietary_tags fixed"}
+    return {"town": town, "knowledge": data, "R280_formula": "FREE + self-cook + R280 dorm - v7.4 tracking"}
 
 @app.post("/itinerary/generate")
 def generate(req: ItineraryRequest):
@@ -263,26 +351,26 @@ def generate(req: ItineraryRequest):
 @app.post("/mcp")
 async def mcp_endpoint(request: Request):
     body = await request.json(); method = body.get("method"); id = body.get("id")
-    if method == "initialize": return {"jsonrpc":"2.0","id":id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"garden-route-specialist-public","version":"7.3.0"}}}
+    if method == "initialize": return {"jsonrpc":"2.0","id":id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"garden-route-specialist-public","version":"7.4.0"}}}
     if method == "notifications/initialized": return {"jsonrpc":"2.0","id":id,"result":{}}
     if method == "tools/list": return {"jsonrpc":"2.0","id":id,"result":{"tools":[
-        {"name":"get_knowledge","description":"PUBLIC v7.3 - 6 towns - Get hidden gems with dietary_tags, NSRI safety, maps","inputSchema":{"type":"object","properties":{"town":{"type":"string"}},"required":["town"]}},
-        {"name":"generate_itinerary","description":"PUBLIC v7.3 - Generate R280/day with 6 towns - dietary_tags vegetarian/vegan/halal fixed + safety links + transport honest","inputSchema":{"type":"object","properties":{"towns":{"type":"array","items":{"type":"string"}},"days":{"type":"integer"},"travel_style":{"type":"string"},"budget_max":{"type":"integer"},"dietary":{"type":"string"},"family_mode":{"type":"boolean"},"shuffle":{"type":"boolean"}},"required":["towns","days"]}},
-        {"name":"get_stats","description":"PUBLIC - Get how many backpackers helped - for hostel pitches","inputSchema":{"type":"object","properties":{}}}
+        {"name":"get_knowledge","description":"PUBLIC v7.4 - 6 towns - TRACKING","inputSchema":{"type":"object","properties":{"town":{"type":"string"}},"required":["town"]}},
+        {"name":"generate_itinerary","description":"PUBLIC v7.4 - R280/day + TRACKING if Claude uses it","inputSchema":{"type":"object","properties":{"towns":{"type":"array","items":{"type":"string"}},"days":{"type":"integer"},"travel_style":{"type":"string"},"budget_max":{"type":"integer"},"dietary":{"type":"string"},"family_mode":{"type":"boolean"},"shuffle":{"type":"boolean"}},"required":["towns","days"]}},
+        {"name":"get_stats","description":"PUBLIC v7.4 - Is Claude using your API? + tracking","inputSchema":{"type":"object","properties":{}}}
     ]}}
     if method == "tools/call":
         params = body.get("params",{}); tool_name = params.get("name"); args = params.get("arguments",{})
         if tool_name == "get_knowledge":
             town = args.get("town","knysna"); key = town.lower().replace(" ","_"); data = LOCAL_KNOWLEDGE.get(key, {})
-            return {"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": json.dumps({"town": town, "knowledge": data}, indent=2)}]}}
+            return {"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": json.dumps({"town": town, "knowledge": data, "tracking": {"claude_calls": STATS["claude_calls"], "is_claude_using": STATS["is_claude_using"]}}, indent=2)}]}}
         if tool_name == "generate_itinerary":
             towns = args.get("towns",["knysna"]); days = int(args.get("days",3)); travel_style = args.get("travel_style","backpacker")
             budget_max = args.get("budget_max"); dietary = args.get("dietary"); family_mode = args.get("family_mode", False); shuffle = args.get("shuffle", False)
             result = build_result(towns, days, travel_style, budget_max, dietary, family_mode, shuffle)
             return {"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": json.dumps(result, indent=2)}]}}
         if tool_name == "get_stats":
-            return {"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": json.dumps(STATS, indent=2)}]}}
+            return {"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": json.dumps({"total_calls": STATS["total_calls"], "claude_calls": STATS["claude_calls"], "is_claude_using": STATS["is_claude_using"], "last_calls": STATS["last_calls"][:5]}, indent=2)}]}}
     return {"jsonrpc":"2.0","id":id,"result":{}}
 
 @app.get("/mcp")
-def mcp_get(): return {"status":"MCP LIVE v7.3 - 6 towns - Ready for 1000 backpackers","version":"7.3.0","connector_url": "https://garden-route-specialist-api.vercel.app/mcp", "new": ["mossel_bay","george"]}
+def mcp_get(): return {"status":"MCP LIVE v7.4 - TRACKING - Ready for Claude + 1000 backpackers","version":"7.4.0","connector_url": "https://garden-route-specialist-api.vercel.app/mcp", "tracking": True, "new": ["mossel_bay","george","claude_tracking"]}
