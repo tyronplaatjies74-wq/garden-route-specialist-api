@@ -41,7 +41,7 @@ def generate_smart_itinerary(towns, days, travel_style):
             for gem in k["hidden_gems"]:
                 pool.append({"town": t, "type": "hidden_gem", "name": gem, "safety": k["safety_tips"], "season": k["best_season"]})
     
-    evenings_pool = ["Sunset at The Heads + oyster bar","Lagoon-side dinner at Drydock","Beach braai at Brenton-on-Sea","Stargazing at Margaret's Viewpoint - take torch","Live music at 34 South","Forest night walk in Gouna","Sunset cruise on Knysna Lagoon"]
+    evenings_pool = ["Sunset at The Heads + cocktails at Island Cafe","Lagoon-side dinner at Drydock","Beach braai at Brenton-on-Sea","Stargazing at Margaret's Viewpoint - take torch","Live music at 34 South","Forest night walk in Gouna","Sunset cruise on Knysna Lagoon"]
 
     plan = []
     used = set()
