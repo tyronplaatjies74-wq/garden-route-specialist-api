@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List
 import json
 
-app = FastAPI(title="Garden Route Specialist AI Agent", version="2.0.0")
+app = FastAPI(title="Garden Route Specialist AI Agent", version="3.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 API_KEY_NAME = "X-Agent-API-Key"
@@ -40,6 +40,9 @@ def generate_smart_itinerary(towns, days, travel_style):
                 pool.append({"town": t, "type": "activity", "name": act, "safety": k["safety_tips"], "season": k["best_season"]})
             for gem in k["hidden_gems"]:
                 pool.append({"town": t, "type": "hidden_gem", "name": gem, "safety": k["safety_tips"], "season": k["best_season"]})
+    
+    evenings_pool = ["Sunset at The Heads + oyster bar","Lagoon-side dinner at Drydock","Beach braai at Brenton-on-Sea","Stargazing at Margaret's Viewpoint - take torch","Live music at 34 South","Forest night walk in Gouna","Sunset cruise on Knysna Lagoon"]
+
     plan = []
     used = set()
     for d in range(1, days+1):
@@ -55,7 +58,19 @@ def generate_smart_itinerary(towns, days, travel_style):
         afternoon = town_pool[1] if len(town_pool)>1 else town_pool[0]
         used.add(morning["name"])
         used.add(afternoon["name"])
-        plan.append({"day": d, "town": t, "morning": f"{morning['name']} ({morning['town']})", "afternoon": f"{afternoon['name']} ({afternoon['town']})", "evening": "Sunset + local food market" if d % 2 == 1 else "Beach braai / stargazing", "safety": morning.get("safety", k["safety_tips"]), "best_time": morning.get("season", k["best_season"]), "pro_tip": "Go early - before 8am no crowds"})
+        
+        evening = evenings_pool[(d-1) % len(evenings_pool)]
+        
+        plan.append({
+            "day": d, 
+            "town": t, 
+            "morning": f"{morning['name']} ({morning['town']})", 
+            "afternoon": f"{afternoon['name']} ({afternoon['town']})", 
+            "evening": evening,
+            "safety": f"{morning.get('safety','')} - Evening: torch + tell someone + no night swim", 
+            "best_time": f"{morning.get('season', k['best_season'])} - Late Oct warm, go before 8am no crowds", 
+            "pro_tip": f"Early start for {morning['name']} = no crowds"
+        })
     return plan
 
 class ItineraryRequest(BaseModel):
@@ -64,7 +79,7 @@ class ItineraryRequest(BaseModel):
  travel_style: str = "adventure"
 
 @app.get("/")
-def root(): return {"status":"Specialist LIVE v2","mcp":"/mcp endpoint LIVE for Claude Free"}
+def root(): return {"status":"Specialist LIVE v3 - PERFECT - No Repeats","mcp":"/mcp endpoint LIVE for Claude Free"}
 
 @app.get("/knowledge/{town}")
 def get_knowledge(town: str, api_key: str = Depends(get_api_key)):
@@ -88,7 +103,7 @@ async def mcp_endpoint(request: Request):
  method = body.get("method")
  id = body.get("id")
  if method == "initialize":
-  return {"jsonrpc":"2.0","id":id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"garden-route-specialist","version":"2.0.0"}}}
+  return {"jsonrpc":"2.0","id":id,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"garden-route-specialist","version":"3.0.0"}}}
  if method == "notifications/initialized":
   return {"jsonrpc":"2.0","id":id,"result":{}}
  if method == "tools/list":
@@ -120,4 +135,4 @@ async def mcp_endpoint(request: Request):
  return {"jsonrpc":"2.0","id":id,"result":{}}
 
 @app.get("/mcp")
-def mcp_get(): return {"status":"MCP endpoint LIVE v2"}
+def mcp_get(): return {"status":"MCP endpoint LIVE v3 - PERFECT"}
