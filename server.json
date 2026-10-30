@@ -1,13 +1,13 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.tyronplaatjies74-wq/garden-route-specialist",
+  "name": "io.github.tyronplaatjies74-wq/garden-route-specialist-api",
   "title": "Garden Route Specialist",
-  "description": "Garden Route travel MCP - routes, accommodation, local guides",
+  "description": "Garden Route travel MCP - routes, accommodation, and local guides for the Garden Route",
   "repository": {
     "url": "https://github.com/tyronplaatjies74-wq/garden-route-specialist-api",
     "source": "github"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "remotes": [
     {
       "type": "streamable-http",
