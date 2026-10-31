@@ -805,3 +805,8 @@ def mcp_get():
         "tracking": True,
         "tools": [t["name"] for t in MCP_TOOLS],
     }
+@app.get("/privacy")
+@app.get("/privacy.html")
+def privacy_page():
+    from fastapi.responses import FileResponse
+    return FileResponse("privacy.html")
