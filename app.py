@@ -8,13 +8,15 @@ from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from typing import List, Optional, Union
 import copy, json, random, time
+from datetime import datetime, timedelta, timezone
 
 import planner
 from planner import (FOOD_ALLOWANCE, MAX_DAYS, VALID_STYLES, display, resolve_town,
                      valid_towns_text, clean_booking_link, normalize_diet,
-                     generate_smart_itinerary, parse_month, parse_rainy, season_info)
+                     generate_smart_itinerary, parse_month, parse_rainy, season_info, MONTH_NAMES)
 
-VERSION = "7.6.0"
+VERSION = "7.6.1"
+SAST = timezone(timedelta(hours=2))  # South Africa time, used when no month is given
 BAZ_PER_LEG = 450
 FUEL_PER_LEG = 200
 
@@ -238,9 +240,13 @@ def build_result(towns, days, travel_style, budget_max, dietary, family_mode, sh
         raise ValueError(f"days must be between 1 and {MAX_DAYS}")
 
     travel_month = parse_month(month)  # raises a clear error on bad input
+    month_assumed = False
     if travel_month is None:
-        warnings.append("No travel month given - seasonal tuning (weather, whales, peak prices) skipped. "
-                        "Pass month, e.g. 'July'.")
+        # Older/cached connectors can't send a month, so never skip seasonal tuning: assume the current month.
+        travel_month = datetime.now(SAST).month
+        month_assumed = True
+        warnings.append(f"No travel month given - assumed the current month ({MONTH_NAMES[travel_month]}). "
+                        f"Tell me your real travel month for accurate activities, prices and whale season.")
     rainy = parse_rainy(rainy_days, days)
 
     if budget_max is not None:
@@ -313,7 +319,7 @@ def build_result(towns, days, travel_style, budget_max, dietary, family_mode, sh
         "filters_applied": {
             "budget_max": budget_max, "dietary": diet or dietary, "family_mode": family_mode,
             "shuffle": shuffle, "travel_style": style,
-            "month": travel_month, "rainy_days": sorted(rainy),
+            "month": travel_month, "month_assumed": month_assumed, "rainy_days": sorted(rainy),
             **({"seed": seed} if shuffle else {}),
         },
         "warnings": warnings,
@@ -433,12 +439,12 @@ MCP_TOOLS = [
         "description": ("Build a day-by-day Garden Route itinerary (west to east, no repeated activities) with per-day costs, "
                         "a budget check, dietary verification, safety notes and transport estimates. Activities within a day are "
                         "kept walkable or a short costed hop apart. If a town has nothing left or open (e.g. rain), the day becomes "
-                        "a trip to the nearest hub. Picks, prices and whale season depend on the month, so ALWAYS ask the traveller "
-                        "for their travel month first. Costs are in South African rand; times and fares are estimates."),
+                        "a trip to the nearest hub. Picks, prices and whale season depend on the month, so ask the traveller "
+                        "for their travel month first (if omitted, the current month is assumed and flagged). Costs are in South African rand; times and fares are estimates."),
         "inputSchema": {"type": "object", "properties": {
             "towns": {"type": "array", "items": {"type": "string"}, "description": "Towns to visit. Valid: " + valid_towns_text() + "."},
             "days": {"type": "integer", "description": f"Trip length in days, 1-{MAX_DAYS}."},
-            "month": {"type": "string", "description": "Month of travel, e.g. 'July' or 7. Ask the traveller if unknown; do not guess. Changes activity picks, hostel prices and whale-watching."},
+            "month": {"type": "string", "description": "Month of travel, e.g. 'July' or 7. Ask the traveller; do not guess. If omitted, the current month is assumed and flagged in warnings. Changes activity picks, hostel prices and whale-watching."},
             "rainy_days": {"type": "array", "items": {"type": "integer"}, "description": "Optional. Day numbers (1-based) the traveller wants rain-proofed with indoor/covered options or a hub trip, e.g. [2, 3]."},
             "travel_style": {"type": "string", "description": "One of: backpacker, adventure, chill, family, foodie. Default: backpacker."},
             "budget_max": {"type": "integer", "description": "Maximum spend per day in rand, all-in (dorm + food allowance + activities), excluding inter-town transport."},
@@ -447,7 +453,7 @@ MCP_TOOLS = [
             "shuffle": {"type": "boolean", "description": "Vary the picks between calls."},
             "seed": {"type": "integer", "description": "Optional. Repeat a shuffled result."},
             "debug": {"type": "boolean", "description": "Include debug info."}},
-            "required": ["towns", "days", "month"]},
+            "required": ["towns", "days"]},
     },
     {
         "name": "get_stats",
