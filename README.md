@@ -1,3 +1,5 @@
+[![Garden Route Specialist MCP server](https://mcprush.com/badge/garden-route-specialist-mcp/card.svg)](https://mcprush.com/to/garden-route-specialist-mcp?ref=badge)
+
 # Garden Route Specialist
 
 Garden Route specialist API for Knysna, Plettenberg Bay, Wilderness, George, Mossel Bay, Tsitsikamma.
